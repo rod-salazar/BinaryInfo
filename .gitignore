@@ -1,2 +1,3 @@
-BinaryInfo.vcxproj.user
-.vc/
+/BinaryInfo.vcxproj.user
+.vs/
+/Debug/
