@@ -49,9 +49,12 @@ private:
         uint16_t readLength = min_t(CACHE_SIZE_BYTES, fileLength_ - byteOffset);
         uint16_t viewLength = min_t(len, fileLength_ - byteOffset);
 
-        // If we have the entire range, let's return our buffer.
-        if (bufferValidBytes > 0 && bufferByteOffset_ <= byteOffset && byteOffset + viewLength <= bufferByteOffset_ + bufferValidBytes) {
-            return buffer_ | std::ranges::views::take(viewLength);
+        // If we have the entire range, let's return a view into our buffer.
+        uint64_t viewEndOffset = byteOffset + viewLength;
+        uint64_t bufferEndOffset = bufferByteOffset_ + bufferValidBytes;
+        if (bufferValidBytes > 0 && bufferByteOffset_ <= byteOffset && viewEndOffset <= bufferEndOffset) {
+            uint16_t bytesBeforeView = static_cast<uint16_t>(byteOffset - bufferByteOffset_);
+            return buffer_ | std::ranges::views::drop(static_cast<uint16_t>(bytesBeforeView)) | std::ranges::views::take(viewLength);
         }
 
         // Casting byte* to char*. TODO: Does c++ guarantee this is okay at compile time?
@@ -61,7 +64,7 @@ private:
         bufferValidBytes = readLength;
         bufferByteOffset_ = byteOffset;
 
-        return buffer_ | std::ranges::views::take(viewLength);
+        return buffer_ | std::ranges::views::drop(0) | std::ranges::views::take(viewLength);
     }
 
 public:
