@@ -47,13 +47,10 @@ private:
 
         // Limit read to the end of the file.
         uint16_t readLength = min_t(CACHE_SIZE_BYTES, fileLength_ - byteOffset);
-
-        assert(readLength <= buffer_.size());
-
         uint16_t viewLength = min_t(len, fileLength_ - byteOffset);
 
         // If we have the entire range, let's return our buffer.
-        if (bufferValid_ && bufferByteOffset_ <= byteOffset && byteOffset + readLength <= bufferByteOffset_ + CACHE_SIZE_BYTES) {
+        if (bufferValidBytes > 0 && bufferByteOffset_ <= byteOffset && byteOffset + viewLength <= bufferByteOffset_ + bufferValidBytes) {
             return buffer_ | std::ranges::views::take(viewLength);
         }
 
@@ -61,7 +58,7 @@ private:
         stream_.read((char*)buffer_.data(), readLength);
 
         // Mark the buffer as having usable data.
-        bufferValid_ = true;
+        bufferValidBytes = readLength;
         bufferByteOffset_ = byteOffset;
 
         return buffer_ | std::ranges::views::take(viewLength);
@@ -101,7 +98,7 @@ private:
 
     std::vector<std::byte> buffer_;
     uint64_t bufferByteOffset_ = -1;
-    bool bufferValid_ = false;
+    uint16_t bufferValidBytes = 0;
 
     FileSession(const FileSession&) = delete;
     FileSession& operator=(FileSession) = delete;
