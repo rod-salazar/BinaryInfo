@@ -60,7 +60,6 @@ private:
         // Casting byte* to char*. TODO: Does c++ guarantee this is okay at compile time?
         stream_.read((char*)buffer_.data(), readLength);
 
-        // Mark the buffer as having usable data.
         bufferValidBytes = readLength;
         bufferByteOffset_ = byteOffset;
 
