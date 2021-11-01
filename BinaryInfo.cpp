@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -18,7 +19,7 @@ using smaller_type = std::conditional_t<sizeof(U) < sizeof(V), U, V>;
 template <typename U, typename V>
 using larger_type = std::conditional_t<sizeof(V) < sizeof(U), U, V>;
 
-// std::min, except it automatically returns the smaller type.
+// std::min, except it automatically uses the smaller type as the return type.
 // https://stackoverflow.com/a/31361217/11763503
 template <typename U, typename V>
 smaller_type<U, V> min_t(const U& u, const V& v) {
@@ -43,7 +44,7 @@ private:
             throw new std::exception("Requested byteoffset is beyond file length");
         }
 
-        stream_.seekg(byteOffset);
+        stream_->seekg(byteOffset);
 
         // Limit read to the end of the file.
         uint16_t readLength = min_t(CACHE_SIZE_BYTES, fileLength_ - byteOffset);
@@ -58,7 +59,7 @@ private:
         }
 
         // Casting byte* to char*. TODO: Does c++ guarantee this is okay at compile time?
-        stream_.read((char*)buffer_.data(), readLength);
+        stream_->read((char*)buffer_.data(), readLength);
 
         bufferValidBytes = readLength;
         bufferByteOffset_ = byteOffset;
@@ -67,20 +68,26 @@ private:
     }
 
 public:
-    // TODO: Where will file not found be handled?
-    FileSession(std::string path) : stream_(path, std::ios::binary) {
+    FileSession(std::string path) {
+        if (!std::filesystem::exists(path)) {
+            throw new std::invalid_argument("File does not exist: " + path);
+        }
+
+        stream_ = std::make_unique<std::ifstream>(path, std::ios::binary);
+
         // Cache the file length
-        stream_.seekg(0, std::ios::end);
-        fileLength_ = stream_.tellg();
-        stream_.seekg(0, std::ios::beg);
+        stream_->seekg(0, std::ios::end);
+        fileLength_ = stream_->tellg();
+        stream_->seekg(0, std::ios::beg);
 
         // Configure stream to throw exceptions on read errors
-        stream_.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        stream_->exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
         // Set size once and we'll re-use this buffer forever.
         buffer_.resize(CACHE_SIZE_BYTES);
     }
 
+    // How does ownership work? What prevents the range outliving the underlying storage?
     auto getRange(uint64_t byteOffset, uint16_t len) {
         assert(len > 0);
         return read(byteOffset, len);
@@ -95,7 +102,9 @@ private:
     // so that the read is always cacheable without reallocating.
     static const uint16_t CACHE_SIZE_BYTES = std::numeric_limits<uint16_t>::max();
 
-    std::ifstream stream_;
+    // I want to check if file exists before constructing the ifstream, for this reason
+    // I can not use an initializer list for stream and just use a concrete type.
+    std::unique_ptr<std::ifstream> stream_;
     uint64_t fileLength_;
 
     std::vector<std::byte> buffer_;
@@ -106,12 +115,23 @@ private:
     FileSession& operator=(FileSession) = delete;
 };
 
+enum class BinaryType {
+    WINDOWS_PE_32,
+    WINDOWS_PE_64,
+    UNKNOWN
+};
+
+const std::array<BinaryType, 2> BINARY_TYPES = { BinaryType::WINDOWS_PE_32, BinaryType::WINDOWS_PE_64 };
+
 // This class maintains a handle to a binary file and
 // exposes information about the binary file.
 class BinarySession {
 public:
-    BinarySession(std::string path) : path_(path), session_(path) {
-        std::cout << std::hex << (int)session_.getByte(0x3C) << std::endl;
+    BinarySession(std::string path) : path_(path) {
+        if (!std::filesystem::exists(path)) {
+            throw new std::invalid_argument("File does not exist: " + path);
+        }
+        session_ = std::make_unique<FileSession>(path);
     }
 
     // TODO: Understand what const after the function name means.
@@ -119,12 +139,67 @@ public:
         return path_;
     }
 
+    const BinaryType getBinaryType() {
+        for (auto type : BINARY_TYPES) {
+            switch (type) {
+                case BinaryType::WINDOWS_PE_32:
+                    if (isWindowsPE32()) {
+                        return BinaryType::WINDOWS_PE_32;
+                    }
+                    break;
+                case BinaryType::WINDOWS_PE_64:
+                    if (isWindowsPE64()) {
+                        return BinaryType::WINDOWS_PE_64;
+                    }
+            }
+        }
+        return BinaryType::UNKNOWN;
+    }
+
+    const bool isWindowsPE32() {
+        // At location 0x3c, the stub has the file offset to the PE signature.
+        // This information enables Windows to properly execute the image file,
+        // even though it has an MS-DOS stub. This file offset is placed at
+        // location 0x3c during linking.
+        std::byte x3c = session_->getByte(0x3C);
+
+        // TODO what if file is too small?
+        auto peSig = session_->getRange((uint64_t)x3c, 4);
+
+        // What's the best way to compare my range to an array?
+        int i = 0;
+        for (auto b : peSig) {
+            if (b != PE_SIG[i++]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    const bool isWindowsPE64() {
+        return false;
+    }
+
+    const std::string describe() {
+        BinaryType type = getBinaryType();
+        switch (type) {
+            case BinaryType::WINDOWS_PE_32:
+                return "Windows PE 32";
+            case BinaryType::WINDOWS_PE_64:
+                return "Windows PE 64";
+        }
+        return "Unknown";
+    }
+
 private:
     BinarySession(const BinarySession&) = delete;
     BinarySession& operator=(BinarySession) = delete;
 
     std::string path_;
-    FileSession session_;
+    std::unique_ptr<FileSession> session_;
+
+    static constexpr const std::byte PE_SIG[] = { (std::byte)'P', (std::byte)'E', (std::byte)0, (std::byte)0 };
 };
 
 
@@ -138,7 +213,13 @@ int main(int argc, char* argv[])
     }
 
     // Invokes copy constructor
-    std::string fileName = argv[1];
-    BinarySession session(fileName);
-    std::cout << session.path() << std::endl;
+    std::string filePath = argv[1];
+    if (!std::filesystem::exists(filePath)) {
+        std::cout << "File does not exist: " << filePath << std::endl;
+        return 1;
+    }
+
+    BinarySession session(filePath);
+    std::cout << session.describe() << std::endl;
+    return 0;
 }
