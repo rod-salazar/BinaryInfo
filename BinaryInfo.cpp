@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -27,48 +28,64 @@ smaller_type<U, V> min_t(const U& u, const V& v) {
     return static_cast<smaller_type<U,V>>(std::min<larger_type<U, V>>(u, v));
 }
 
-// This exposes the ability to read a range of bytes from
-// a file starting from an offset. It may cache a larger range
-// than requested, which might benefit the access pattern of
-// reading the file from beginning to end.
-// 
-// This class does not make any guarantee that anything is cached.
+// This class encapsulates the functionality of reading a range of bytes in a file
+// from a given byte offset. It assumes the file will likely be read sequentially from
+// beginning to end, so it may read ahead and buffer more data than requested.
 class FileSession {
+    using ReadLengthType = uint16_t;
+
     // Insert private section up top due to auto type deduction requiring this method order.
 private:
-    // This will read CACHE_SIZE_BYTES bytes from the file or until the file ends,
-    // place it into cache and return a range view into the cache.
-    auto read(uint64_t byteOffset, uint16_t len) {
-
+    /*
+     * This will read CACHE_SIZE_BYTES bytes from the file or until the file ends,
+     * place it into cache and return a range view into the cache buffer.
+     *
+     * If the requested range is already in the cache it will just return a range view.
+     * If the requested len would go out of bounds of the file, the range view will be
+     * smaller than len.
+     */
+    auto read(const uint64_t byteOffset, const ReadLengthType len) {
         if (byteOffset >= fileLength_) {
-            throw new std::exception("Requested byteoffset is beyond file length");
+            throw new std::exception("byteoffset is beyond file length");
         }
 
-        stream_->seekg(byteOffset);
+        if (byteOffset < 0) {
+            throw new std::exception("byteoffset must be >= 0");
+        }
 
-        // Limit read to the end of the file.
-        uint16_t readLength = min_t(CACHE_SIZE_BYTES, fileLength_ - byteOffset);
+        if (len <= 0) {
+            throw new std::exception("len must be > 0");
+        }
+
+        // Returned view length should be smaller than len if end of file is reached.
         uint16_t viewLength = min_t(len, fileLength_ - byteOffset);
 
-        // If we have the entire range, let's return a view into our buffer.
+        // If we have the entire range already buffered, let's return a range view into our buffer.
+        // We want to return the range [byteOffset, viewEndOffset).
         uint64_t viewEndOffset = byteOffset + viewLength;
         uint64_t bufferEndOffset = bufferByteOffset_ + bufferValidBytes;
-        if (bufferValidBytes > 0 && bufferByteOffset_ <= byteOffset && viewEndOffset <= bufferEndOffset) {
+        if (bufferByteOffset_ <= byteOffset && viewEndOffset <= bufferEndOffset) {
+            assert(byteOffset - bufferByteOffset_ <= std::numeric_limits<uint16_t>::max());
             uint16_t bytesBeforeView = static_cast<uint16_t>(byteOffset - bufferByteOffset_);
             return buffer_ | std::ranges::views::drop(static_cast<uint16_t>(bytesBeforeView)) | std::ranges::views::take(viewLength);
         }
 
+        // Don't read beyond end of the file.
+        uint16_t readLength = min_t(CACHE_SIZE_BYTES, fileLength_ - byteOffset);
+
         // Casting byte* to char*. TODO: Does c++ guarantee this is okay at compile time?
+        stream_->seekg(byteOffset);
         stream_->read((char*)buffer_.data(), readLength);
 
         bufferValidBytes = readLength;
         bufferByteOffset_ = byteOffset;
 
+        // We have to drop(0) here to have a consistent return type.
         return buffer_ | std::ranges::views::drop(0) | std::ranges::views::take(viewLength);
     }
 
 public:
-    FileSession(std::string path) {
+    FileSession(const std::string& path) {
         if (!std::filesystem::exists(path)) {
             throw new std::invalid_argument("File does not exist: " + path);
         }
@@ -87,23 +104,29 @@ public:
         buffer_.resize(CACHE_SIZE_BYTES);
     }
 
-    // How does ownership work? What prevents the range outliving the underlying storage?
-    auto getRange(uint64_t byteOffset, uint16_t len) {
-        assert(len > 0);
+    /**
+     * This function does not transfer ownership of the data.
+     * The FileSession object must outlive the returned range.
+     */
+    auto getRange(const uint64_t byteOffset, const ReadLengthType len) {
         return read(byteOffset, len);
     }
 
-    std::byte getByte(uint64_t byteOffset) {
+    std::byte getByte(const uint64_t byteOffset) {
         return *getRange(byteOffset, 1).begin();
     }
 
 private:
-    // This must be at least as large as the len parameter on the read() function can be (uint16_t)
-    // so that the read is always cacheable without reallocating.
-    static const uint16_t CACHE_SIZE_BYTES = std::numeric_limits<uint16_t>::max();
 
-    // I want to check if file exists before constructing the ifstream, for this reason
-    // I can not use an initializer list for stream and just use a concrete type.
+    // Best guess based off Windows documented recommendation: https://bit.ly/3GXoYK9
+    // Linux would have other approaches to choose this.
+    static constexpr uint16_t CACHE_SIZE_BYTES = 65535;
+
+    // CACHE_SIZE_BYTES should be at least as large as the len parameter on the 
+    // FileSystem::read function so that the read is always cacheable without
+    // needing to reallocate to larger size.
+    static_assert(CACHE_SIZE_BYTES >= std::numeric_limits<ReadLengthType>::max());
+
     std::unique_ptr<std::ifstream> stream_;
     uint64_t fileLength_;
 
@@ -132,6 +155,20 @@ public:
             throw new std::invalid_argument("File does not exist: " + path);
         }
         session_ = std::make_unique<FileSession>(path);
+
+        // Test code
+        std::ifstream f(path);
+        f.seekg(0, std::ios::end);
+        const int len = f.tellg();
+        f.seekg(0, std::ios::beg);
+
+        for (int i = 0; i < len; i += 1000) {
+            auto r = session_->getRange(i, 10000);
+            for (auto b : r) {
+                if ((char)b == '?') std::cout << '?';
+            }
+        }
+        // Test code
     }
 
     // TODO: Understand what const after the function name means.
