@@ -1,4 +1,2 @@
-﻿  Scanning sources for module dependencies...
-  pch.cpp
-  test.cpp
-C:\Users\rodrigos\Documents\Code\BinaryInfo\FileSessionTests\test.cpp(3,19): error C2230: could not find module 'FileSession'
+﻿  test.cpp
+  FileSessionTests.vcxproj -> C:\Users\rodrigos\Documents\Code\BinaryInfo\Debug\FileSessionTests.exe
