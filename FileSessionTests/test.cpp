@@ -1,8 +1,9 @@
+#include <string>
 #include "pch.h"
 
 import FileSession;
 
-TEST(TestCaseName, TestName) {
-  EXPECT_EQ(1, 1);
-  EXPECT_TRUE(true);
+TEST(FileSystemFileDoesNotExist, FileSystemTests) {
+	const std::string sstr("abc");
+	IO::FileSession f(sstr);
 }

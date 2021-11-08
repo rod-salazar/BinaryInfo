@@ -90,10 +90,14 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalModuleDependencies>FileSession=C:\Users\rodrigos\Documents\Code\BinaryInfo\FileSession\Debug\FileSystem.ixx.ifc;</AdditionalModuleDependencies>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AddModuleNamesToAssembly>
+      </AddModuleNamesToAssembly>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -106,12 +110,15 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalModuleDependencies>FileSession=C:\Users\rodrigos\Documents\Code\BinaryInfo\FileSession\Debug\FileSystem.ixx.ifc;</AdditionalModuleDependencies>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AddModuleNamesToAssembly>
+      </AddModuleNamesToAssembly>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -144,7 +151,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BinaryInfo.cpp" />
-    <ClCompile Include="FileSession.ixx" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="FileSession\FileSession.vcxproj">
+      <Project>{c818c848-d0be-4975-8261-acc8e05dc66b}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

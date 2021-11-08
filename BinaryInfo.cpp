@@ -9,7 +9,8 @@
 #include <ranges>
 #include <type_traits>
 
-import FileSession;
+import FileSession;
+
 
 // TODO: How can I write a unit-test?
 // TODO: How can I hook this up to valgrind or similar?
@@ -26,7 +27,7 @@ const std::array<BinaryType, 2> BINARY_TYPES = { BinaryType::WINDOWS_PE_32, Bina
 // exposes information about the binary file.
 class BinarySession {
 public:
-    BinarySession(std::string path) : path_(path) {
+    BinarySession(const std::string& path) : path_(path) {
         if (!std::filesystem::exists(path)) {
             throw new std::invalid_argument("File does not exist: " + path);
         }

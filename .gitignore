@@ -1,7 +1,5 @@
 /BinaryInfo.vcxproj.user
 .vs/
-/Debug/
-/Release/
-/FileSessionTests/Debug/
-/FileSessionTests/Release/
+Debug/
+Release/
 /packages/
